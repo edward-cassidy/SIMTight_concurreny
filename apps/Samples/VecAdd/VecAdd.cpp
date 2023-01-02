@@ -12,6 +12,7 @@ struct VecAdd : Kernel {
   }
 };
 
+
 int main()
 {
   // Are we in simulation?
@@ -41,9 +42,16 @@ int main()
   k.a = a;
   k.b = b;
   k.result = result;
+  k.threadblockx = (pebblesHartId() >> k.map.blockXShift)
+                            & k.map.blockXMask;
+  k.threadblocky = (pebblesHartId() >> k.map.blockYShift)
+                            & k.map.blockYMask;
+
 
   // Invoke kernel
-  noclRunKernelAndDumpStats(&k);
+  mapping_func<VecAdd>(&k);
+  go_func(&k);
+
 
   // Check result
   bool ok = true;

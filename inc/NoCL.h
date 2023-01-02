@@ -191,13 +191,19 @@ struct Kernel {
 
   // Mapping between SIMT threads and CUDA thread/block indices
   KernelMapping map;
+
+  int threadblockx;
+
+  int threadblocky;
+
+  virtual void kernel(){}
 };
 
 // Kernel invocation
 // =================
 
 // SIMT main function
-template <typename K> __attribute__ ((noinline)) void _noclSIMTMain_() {
+void _noclSIMTMain_() {
   pebblesSIMTPush();
 
   // Get pointer to kernel closure
@@ -206,9 +212,9 @@ template <typename K> __attribute__ ((noinline)) void _noclSIMTMain_() {
     K* kernelPtr = (K*) cheri_address_set(almighty,
                           pebblesKernelClosureAddr());
   #else
-    K* kernelPtr = (K*) pebblesKernelClosureAddr();
+    Kernel* kernelPtr = (Kernel*) pebblesKernelClosureAddr();
   #endif
-  K k = *kernelPtr;
+  Kernel k = *kernelPtr;
 
   // Set thread index
   k.threadIdx.x = pebblesHartId() & k.map.threadXMask;
@@ -223,31 +229,21 @@ template <typename K> __attribute__ ((noinline)) void _noclSIMTMain_() {
                             & k.map.blockXMask;
   unsigned blockYOffset = (pebblesHartId() >> k.map.blockYShift)
                             & k.map.blockYMask;
-  k.blockIdx.x = blockXOffset;
-  k.blockIdx.y = blockYOffset;
+  k.blockIdx.x = k.threadblockx;
+  k.blockIdx.y = k.threadblocky;
 
   // Invoke kernel
   pebblesSIMTConverge();
-  while (k.blockIdx.y < k.gridDim.y) {
-    while (k.blockIdx.x < k.gridDim.x) {
-      uint32_t localBase = LOCAL_MEM_BASE +
-                 k.map.localBytesPerBlock * blockIdxWithinSM;
-      #if EnableCHERI
-        // TODO: constrain bounds
-        void* almighty = cheri_ddc_get();
-        k.shared.top = (char*) cheri_address_set(almighty, localBase);
-      #else
-        k.shared.top = (char*) localBase;
-      #endif
-      k.kernel();
-      pebblesSIMTConverge();
-      pebblesSIMTLocalBarrier();
-      k.blockIdx.x += k.map.numXBlocks;
-    }
+  uint32_t localBase = LOCAL_MEM_BASE + k.map.localBytesPerBlock * blockIdxWithinSM;
+  #if EnableCHERI      // TODO: constrain bounds
+      void* almighty = cheri_ddc_get();
+      k.shared.top = (char*) cheri_address_set(almighty, localBase);
+  #else
+    k.shared.top = (char*) localBase;
+  #endif
+    k.kernel();
     pebblesSIMTConverge();
-    k.blockIdx.x = blockXOffset;
-    k.blockIdx.y += k.map.numYBlocks;
-  }
+    pebblesSIMTLocalBarrier();
 
   // Issue a fence to ensure all data has reached DRAM
   pebblesFence();
@@ -257,7 +253,6 @@ template <typename K> __attribute__ ((noinline)) void _noclSIMTMain_() {
 }
 
 // SIMT entry point
-template <typename K> __attribute__ ((noinline))
   void _noclSIMTEntry_() {
     // Stack top
     uint32_t top = 0;
@@ -275,10 +270,111 @@ template <typename K> __attribute__ ((noinline))
       asm volatile("mv sp, %0\n" : : "r"(top-8));
     #endif
     // Invoke main function
-    _noclSIMTMain_<K>();
+    _noclSIMTMain_();
   }
 
+
+// Mapping function
+template <typename K> __attribute__ ((noinline))
+  void mapping_func(K* k) {
+    unsigned threadsPerBlock = k->blockDim.x * k->blockDim.y;
+    unsigned threadsUsed = threadsPerBlock * k->gridDim.x * k->gridDim.y;
+
+    // Limitations for simplicity (TODO: relax)
+    assert(k->blockDim.z == 1,
+      "NoCL: blockDim.z != 1 (3D thread blocks not yet supported)");
+    assert(k->gridDim.z == 1,
+      "NoCL: gridDim.z != 1 (3D grids not yet supported)");
+    assert(isOneHot(k->blockDim.x) && isOneHot(k->blockDim.y),
+      "NoCL: blockDim.x or blockDim.y is not a power of two");
+    assert(threadsPerBlock >= SIMTLanes,
+      "NoCL: warp size does not divide evenly into block size");
+    assert(threadsPerBlock <= SIMTWarps * SIMTLanes,
+      "NoCL: block size is too large (exceeds SIMT thread count)");
+    assert(threadsUsed >= SIMTWarps * SIMTLanes,
+      "NoCL: unused SIMT threads (more SIMT threads than CUDA threads)");
+
+    // Map hardware threads to CUDA thread&block indices
+    // -------------------------------------------------
+
+    // Block dimensions are all powers of two
+    k->map.threadXMask = k->blockDim.x - 1;
+    k->map.threadYMask = k->blockDim.y - 1;
+    k->map.threadXShift = log2floor(k->blockDim.x);
+    k->map.threadYShift = log2floor(k->blockDim.y);
+    k->map.blockXShift = k->map.threadXShift + k->map.threadYShift;
+
+    // Allocate blocks in grid X dimension
+    unsigned logThreadsLeft = SIMTLogLanes + SIMTLogWarps - k->map.blockXShift;
+    unsigned gridXLogBlocks = (1 << logThreadsLeft) <= k->gridDim.x
+      ? logThreadsLeft : log2floor(k->gridDim.x);
+    k->map.numXBlocks = 1 << gridXLogBlocks;
+    k->map.blockXMask = k->map.numXBlocks - 1;
+    logThreadsLeft -= gridXLogBlocks;
+
+    // Allocate hardware threads in grid Y dimension
+    k->map.blockYShift = k->map.blockXShift + gridXLogBlocks;
+    unsigned gridYLogBlocks = (1 << logThreadsLeft) <= k->gridDim.y
+      ? logThreadsLeft : log2floor(k->gridDim.y);
+    k->map.numYBlocks = 1 << gridYLogBlocks;
+    k->map.blockYMask = k->map.numYBlocks - 1;
+
+    // Limitations for simplicity (TODO: relax)
+    assert(k->gridDim.x % k->map.numXBlocks == 0,
+      "gridDim.x is not a multiple of threads available in X dimension");
+    assert(k->gridDim.y % k->map.numYBlocks == 0,
+      "gridDim.y is not a multiple of threads available in Y dimension");
+
+    // Set base of shared local memory (per block)
+    unsigned blocksPerSM = (SIMTWarps * SIMTLanes) / threadsPerBlock;
+    unsigned localBytes = 4 << (SIMTLogSRAMBanks + SIMTLogWordsPerSRAMBank);
+    k->map.localBytesPerBlock = localBytes / blocksPerSM;
+
+    // End of mapping
+    // 
+  }
+
+int go_func(Kernel *k) {
+
+  unsigned threadsPerBlock = k->blockDim.x * k->blockDim.y;
+  unsigned threadsUsed = threadsPerBlock * k->gridDim.x * k->gridDim.y;
+
+  // Set number of warps per block
+    // (for fine-grained barrier synchronisation)
+    unsigned warpsPerBlock = threadsPerBlock >> SIMTLogLanes;
+    while (!pebblesSIMTCanPut()) {}
+    pebblesSIMTSetWarpsPerBlock(warpsPerBlock);
+
+    // Set address of kernel closure
+    #if EnableCHERI
+      uint32_t kernelAddr = cheri_address_get(k);
+    #else
+      uint32_t kernelAddr = (uint32_t) k;
+    #endif
+    while (!pebblesSIMTCanPut()) {}
+    pebblesSIMTSetKernel(kernelAddr);
+
+    // Flush cache
+    pebblesCacheFlushFull();
+
+    // Start kernel on SIMT core
+    #if EnableCHERI
+      void (*entryFun)() = _noclSIMTEntry_<K>;
+      uint32_t entryAddr = cheri_address_get(entryFun);
+    #else
+      uint32_t entryAddr = (uint32_t) _noclSIMTEntry_;
+    #endif
+    while (!pebblesSIMTCanPut()) {}
+    pebblesSIMTStartKernel(entryAddr);
+
+    // Wait for kernel response
+    while (!pebblesSIMTCanGet()) {}
+    return pebblesSIMTGet();
+}
+
+
 // Trigger SIMT kernel execution from CPU
+/*
 template <typename K> __attribute__ ((noinline))
   int noclRunKernel(K* k) {
     unsigned threadsPerBlock = k->blockDim.x * k->blockDim.y;
@@ -368,7 +464,7 @@ template <typename K> __attribute__ ((noinline))
     // Wait for kernel response
     while (!pebblesSIMTCanGet()) {}
     return pebblesSIMTGet();
-  }
+  }*/
 
 // Ask SIMT core for given performance stat
 inline void printStat(const char* str, uint32_t statId)
