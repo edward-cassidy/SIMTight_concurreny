@@ -25,6 +25,10 @@ template <int SquareSize> struct Transpose : Kernel {
   }
 };
 
+
+
+
+
 int main()
 {
   // Are we in simulation?
@@ -46,7 +50,7 @@ int main()
   uint32_t seed = 1;
   for (int i = 0; i < height; i++)
     for (int j = 0; j < width; j++)
-      matIn[i][j] = rand15(&seed);
+      matIn[i][j] = i*256 + j;
 
   // Number of loop iterations per block.  The number of iterations
   // times the block Y dimension must equal the block X dimension.
@@ -61,23 +65,72 @@ int main()
   k.gridDim.x = width / k.blockDim.x;
   k.gridDim.y = height / (itersPerBlock * k.blockDim.y);
 
+  //Assign thread IDs
+
+
+  k.blockIdx.x = 0;
+  k.blockIdx.y = 0;
+
+
   // Assign parameters
   k.in = matIn;
   k.out = matOut;
 
+
+  
   // Invoke kernel
-  noclRunKernelAndDumpStats(&k);
+  mapping_func<Transpose<SIMTLanes>>(&k);
+  int counter = 0;
+  puthex(k.blockIdx.x);
+  putchar('\n');
+  puthex(k.blockIdx.y);
+  putchar('\n');
+  puthex(k.gridDim.x);
+  putchar('\n');
+  puthex(k.gridDim.y);
+  putchar('\n');
+  while (k.blockIdx.y < k.gridDim.y) {
+    while (k.blockIdx.x < k.gridDim.x) {
+      counter++;
+      puthex(k.blockIdx.x);
+      putchar('\n');
+      puthex(k.blockIdx.y);
+      putchar('\n');
+      puts("strange");
+      putchar('\n');
+      go_func(&k);
+      puthex(k.blockIdx.x);
+      putchar('\n');
+      puthex(k.blockIdx.y);
+      putchar('\n');
+      k.blockIdx.x += k.map.numXBlocks;
+
+    }
+    k.blockIdx.x = 0;
+    k.blockIdx.y += k.map.numYBlocks;
+  }
+  
+
+
 
   // Check result
   bool ok = true;
-  for (int i = 0; i < width; i++)
-    for (int j = 0; j < height; j++)
+  bool check = false;
+  for (int i = 0; i < width; i++){
+    for (int j = 0; j < height; j++){
       ok = ok && matOut[i][j] == matIn[j][i];
+    }
+  }
+    
 
   // Display result
   puts("Self test: ");
   puts(ok ? "PASSED" : "FAILED");
   putchar('\n');
+  
+  
+  
+
 
   return 0;
 }
