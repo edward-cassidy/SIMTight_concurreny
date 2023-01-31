@@ -76,8 +76,16 @@ int main()
   k.in = matIn;
   k.out = matOut;
 
-
+  puts("before mapping");
+  mapping_func<Transpose<SIMTLanes>>(&k);
+  Kernel *array[1] = {&k};
+  puts("Before Scheduler");
+  scheduler(array, 1);
+  puts("After Scheduler");
   
+ 
+
+  /*
   // Invoke kernel
   mapping_func<Transpose<SIMTLanes>>(&k);
   int counter = 0;
@@ -109,7 +117,7 @@ int main()
     k.blockIdx.x = 0;
     k.blockIdx.y += k.map.numYBlocks;
   }
-  
+  */
 
 
 

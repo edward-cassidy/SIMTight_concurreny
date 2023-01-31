@@ -585,6 +585,44 @@ INLINE void __syncthreads() {
 }
 
 
+__attribute__ ((noinline)) int scheduler(Kernel **arr, int size){
+    
+    FixedQueue queue(arr , size);
+    puts("Creating Queue");
+    for (int i = 0; i < size; i++)
+    {
+        queue.enqueue(arr[i]);
+    }
+
+    
+    puts("Finshed creating Queue");
+    bool kernel_finished = false;
+    while (true)
+    {
+        puts("Running kernel");
+        kernel_finished = false;
+        Kernel *k = queue.pop();
+        if(k->blockIdx.y < k->gridDim.y){
+            if(k->blockIdx.x < k->gridDim.x){
+                go_func(k);
+                k->blockIdx.x += k->map.numXBlocks;
+            }else{
+                k->blockIdx.x = 0;
+                k->blockIdx.y += k->map.numYBlocks;
+            }
+        }else{
+            kernel_finished = true;
+        }
+
+        if(!kernel_finished){
+            queue.enqueue(k);
+        }else if(queue.head == queue.tail){
+            break;  
+        }
+    }
+    return 0;
+}
+
 
 
 
