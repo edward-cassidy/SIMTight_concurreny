@@ -1,8 +1,8 @@
 #include <NoCL.h>
 #include <Rand.h>
+#include <Pebbles/CSRs/CycleCount.h>
 
-// Kernel for matrix transposition
-// One sub-square at a time
+
 template <int SquareSize> struct Transpose : Kernel {
   Array2D<int> in, out;
   
@@ -25,51 +25,14 @@ template <int SquareSize> struct Transpose : Kernel {
   }
 };
 
-struct VecAdd : Kernel {
-  int len;
-  int *a, *b, *result;
-
-  void kernel() {
-    for (int i = threadIdx.x; i < len; i += blockDim.x)
-      result[i] = a[i] + b[i];
-  }
-};
 
 int main()
 {
-  int N = 3000;
-  simt_aligned int a[N], b[N], result[N];
-
-  // Initialise inputs
-  uint32_t seed2 = 1;
-  for (int i = 0; i < N; i++) {
-    a[i] = rand15(&seed2);
-    b[i] = rand15(&seed2);
-  }
-
-  // Instantiate kernel
-  VecAdd vecadd;
-
-  // Use a single block of threads
-  vecadd.blockDim.x = SIMTWarps * SIMTLanes;
-
-  // Assign parameters
-  vecadd.len = N;
-  vecadd.a = a;
-  vecadd.b = b;
-  vecadd.result = result;
-  vecadd.blockIdx.x = 0;
-  vecadd.blockIdx.y = 0;
-
-
-
-  // Are we in simulation?
-  bool isSim = getchar();
-
-  // Matrix size for benchmarking
-  int width = isSim ? 256 : 512;
-  int height = isSim ? 64 : 512;
-
+  puts("start");
+  putchar('\n');
+  int width = 256;
+  int height = 64;
+  
   // Input and output matrix data
   nocl_aligned int matInData[width*height];
   nocl_aligned int matOutData[width*height];
@@ -109,52 +72,16 @@ int main()
   k.out = matOut;
 
   puts("before mapping");
+  putchar('\n');
   mapping_func<Transpose<SIMTLanes>>(&k);
-  mapping_func<VecAdd>(&vecadd);
-  Kernel *array[2] = {&k, &vecadd};
+  Kernel *array[1] = {&k};
   puts("Before Scheduler");
-  scheduler(array, 2);
-  puts("After Scheduler");
+  putchar('\n');
   
- 
-
-  /*
-  // Invoke kernel
-  mapping_func<Transpose<SIMTLanes>>(&k);
-  int counter = 0;
-  puthex(k.blockIdx.x);
+  scheduler(array, 1);
+  puts("After Scheduler");
   putchar('\n');
-  puthex(k.blockIdx.y);
-  putchar('\n');
-  puthex(k.gridDim.x);
-  putchar('\n');
-  puthex(k.gridDim.y);
-  putchar('\n');
-  while (k.blockIdx.y < k.gridDim.y) {
-    while (k.blockIdx.x < k.gridDim.x) {
-      counter++;
-      puthex(k.blockIdx.x);
-      putchar('\n');
-      puthex(k.blockIdx.y);
-      putchar('\n');
-      puts("strange");
-      putchar('\n');
-      go_func(&k);
-      puthex(k.blockIdx.x);
-      putchar('\n');
-      puthex(k.blockIdx.y);
-      putchar('\n');
-      k.blockIdx.x += k.map.numXBlocks;
 
-    }
-    k.blockIdx.x = 0;
-    k.blockIdx.y += k.map.numYBlocks;
-  }
-  */
-
-
-
-  // Check result
   bool ok = true;
   bool check = false;
   for (int i = 0; i < width; i++){
@@ -165,20 +92,12 @@ int main()
     
 
   // Display result
-  puts("Self test Matrix: ");
+  puts("Self test: ");
   puts(ok ? "PASSED" : "FAILED");
   putchar('\n');
-  
-  ok = true;
-  for (int i = 0; i < N; i++)
-    ok = ok && result[i] == a[i] + b[i];
-
-  // Display result
-  puts("Self test VecAdd: ");
-  puts(ok ? "PASSED" : "FAILED");
-  putchar('\n');
-  
-
-
   return 0;
+ 
 }
+
+
+

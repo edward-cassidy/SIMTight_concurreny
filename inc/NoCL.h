@@ -423,7 +423,7 @@ int go_func(Kernel *k) {
 
 
 // Trigger SIMT kernel execution from CPU
-/*
+
 template <typename K> __attribute__ ((noinline))
   int noclRunKernel(K* k) {
     unsigned threadsPerBlock = k->blockDim.x * k->blockDim.y;
@@ -513,7 +513,7 @@ template <typename K> __attribute__ ((noinline))
     // Wait for kernel response
     while (!pebblesSIMTCanGet()) {}
     return pebblesSIMTGet();
-  }*/
+  }
 
 // Ask SIMT core for given performance stat
 inline void printStat(const char* str, uint32_t statId)
