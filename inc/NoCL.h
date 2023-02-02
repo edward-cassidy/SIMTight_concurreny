@@ -121,6 +121,8 @@ struct SharedLocalMem {
     return ptr;
   }
 
+
+
   // Typed allocation
   template <typename T> T* alloc(int n) {
     return (T*) alloc(n * sizeof(T));
@@ -147,6 +149,7 @@ struct SharedLocalMem {
     a.size = n; return a;
   }
 
+  
   // Allocate 2D array with dynamic size
   template <typename T> Array2D<T> array(int n0, int n1) {
     Array2D<T> a; a.base = (T*) alloc(n0 * n1 * sizeof(T));
@@ -193,6 +196,9 @@ struct Kernel {
   KernelMapping map;
 
   int entry_point;
+
+  int cycle_count;
+
 };
 
 
@@ -585,21 +591,25 @@ INLINE void __syncthreads() {
 }
 
 
+
+//Implements Round Robin Scheduler
 __attribute__ ((noinline)) int scheduler(Kernel **arr, int size){
     
     FixedQueue queue(arr , size);
     puts("Creating Queue");
+    putchar('\n');
     for (int i = 0; i < size; i++)
     {
         queue.enqueue(arr[i]);
     }
 
-    
     puts("Finshed creating Queue");
+    putchar('\n');
     bool kernel_finished = false;
     while (true)
     {
         puts("Running kernel");
+        putchar('\n');
         kernel_finished = false;
         Kernel *k = queue.pop();
         if(k->blockIdx.y < k->gridDim.y){
@@ -612,6 +622,7 @@ __attribute__ ((noinline)) int scheduler(Kernel **arr, int size){
             }
         }else{
             kernel_finished = true;
+            k->cycle_count = pebblesCycleCount();
         }
 
         if(!kernel_finished){

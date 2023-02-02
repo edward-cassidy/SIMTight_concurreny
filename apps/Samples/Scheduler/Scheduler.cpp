@@ -26,10 +26,25 @@ template <int SquareSize> struct Transpose : Kernel {
 };
 
 
+struct VecAdd : Kernel {
+  int len;
+  int *a, *b, *result;
+
+  void kernel() {
+    for (int i = threadIdx.x; i < len; i += blockDim.x)
+      result[i] = a[i] + b[i];
+  }
+};
+
+
 int main()
 {
   puts("start");
   putchar('\n');
+
+
+
+  /*
   int width = 256;
   int height = 64;
   
@@ -61,8 +76,6 @@ int main()
   k.gridDim.y = height / (itersPerBlock * k.blockDim.y);
 
   //Assign thread IDs
-
-
   k.blockIdx.x = 0;
   k.blockIdx.y = 0;
 
@@ -78,6 +91,8 @@ int main()
   puts("Before Scheduler");
   putchar('\n');
   
+
+  int before = pebblesCycleCount();
   scheduler(array, 1);
   puts("After Scheduler");
   putchar('\n');
@@ -88,12 +103,78 @@ int main()
     for (int j = 0; j < height; j++){
       ok = ok && matOut[i][j] == matIn[j][i];
     }
+  }*/
+
+
+  //////////////////////////////////////////////////////////////
+  // Are we in simulation?
+  bool isSim = getchar();
+
+  // Vector size for benchmarking
+  int N = isSim ? 3000 : 1000000;
+
+  // Input and output vectors
+  simt_aligned int a[N], b[N], result[N];
+
+  // Initialise inputs
+  uint32_t seed = 1;
+  for (int i = 0; i < N; i++) {
+    a[i] = rand15(&seed);
+    b[i] = rand15(&seed);
   }
-    
+
+  // Instantiate kernel
+  VecAdd k;
+
+  // Use a single block of threads
+  k.blockDim.x = SIMTWarps * SIMTLanes;
+
+  // Assign parameters
+  k.len = N;
+  k.a = a;
+  k.b = b;
+  k.result = result;
+  k.threadIdx.x = 0;
+  k.threadIdx.y= 0;
+
+
+  //////////////////////////////////////////////////////////////
+  
+  puts("before mapping");
+  putchar('\n');
+  mapping_func<VecAdd>(&k);
+  Kernel *array[1] = {&k};
+  puts("Before Scheduler");
+  putchar('\n');
+  
+
+  int before = pebblesCycleCount();
+  scheduler(array, 1);
+  puts("After Scheduler");
+  putchar('\n');
+
+  // Check result
+  bool ok = true;
+  for (int i = 0; i < N; i++){
+      ok = ok && result[i] == a[i] + b[i];
+  }
+
 
   // Display result
   puts("Self test: ");
   puts(ok ? "PASSED" : "FAILED");
+  putchar('\n');
+
+  puts("Before cycle_count: ");
+  puthex(before);
+  putchar('\n');
+
+  puts("After cycle_count: ");
+  puthex(k.cycle_count);
+  putchar('\n');
+
+  puts("Total cycle_count: ");
+  puthex(k.cycle_count - before);
   putchar('\n');
   return 0;
  
