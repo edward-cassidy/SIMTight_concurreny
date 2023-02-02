@@ -1,5 +1,6 @@
 #include <NoCL.h>
 #include <Rand.h>
+#include <Pebbles/CSRs/CycleCount.h> 
 
 // Kernel for adding vectors
 struct VecAdd : Kernel {
@@ -43,7 +44,9 @@ int main()
   k.result = result;
 
   // Invoke kernel
+  int before = pebblesCycleCount();
   noclRunKernelAndDumpStats(&k);
+  int after = pebblesCycleCount();
 
   // Check result
   bool ok = true;
@@ -53,6 +56,15 @@ int main()
   // Display result
   puts("Self test: ");
   puts(ok ? "PASSED" : "FAILED");
+  putchar('\n');
+  puts("Before: ");
+  puthex(before);
+  putchar('\n');
+  puts("After: ");
+  puthex(after);
+  putchar('\n');
+  puts("Cycles taken: ");
+  puthex(after - before);
   putchar('\n');
 
   return 0;
