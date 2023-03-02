@@ -42,72 +42,8 @@ int main()
   puts("start");
   putchar('\n');
 
-
-
-  /*
-  int width = 256;
-  int height = 64;
   
-  // Input and output matrix data
-  nocl_aligned int matInData[width*height];
-  nocl_aligned int matOutData[width*height];
-
-  // Friendly array wrappers
-  Array2D<int> matIn(matInData, height, width);
-  Array2D<int> matOut(matOutData, width, height);
-
-  // Initialise inputs
-  uint32_t seed = 1;
-  for (int i = 0; i < height; i++)
-    for (int j = 0; j < width; j++)
-      matIn[i][j] = i*256 + j;
-
-  // Number of loop iterations per block.  The number of iterations
-  // times the block Y dimension must equal the block X dimension.
-  const int itersPerBlock = 4;
-
-  // Instantiate kernel
-  Transpose<SIMTLanes> k;
-
-  // Set block/grid dimensions
-  k.blockDim.x = SIMTLanes;
-  k.blockDim.y = SIMTLanes / itersPerBlock;
-  k.gridDim.x = width / k.blockDim.x;
-  k.gridDim.y = height / (itersPerBlock * k.blockDim.y);
-
-  //Assign thread IDs
-  k.blockIdx.x = 0;
-  k.blockIdx.y = 0;
-
-
-  // Assign parameters
-  k.in = matIn;
-  k.out = matOut;
-
-  puts("before mapping");
-  putchar('\n');
-  mapping_func<Transpose<SIMTLanes>>(&k);
-  Kernel *array[1] = {&k};
-  puts("Before Scheduler");
-  putchar('\n');
-  
-
-  int before = pebblesCycleCount();
-  scheduler(array, 1);
-  puts("After Scheduler");
-  putchar('\n');
-
-  bool ok = true;
-  bool check = false;
-  for (int i = 0; i < width; i++){
-    for (int j = 0; j < height; j++){
-      ok = ok && matOut[i][j] == matIn[j][i];
-    }
-  }*/
-
-
-  //////////////////////////////////////////////////////////////
-  // Are we in simulation?
+// Are we in simulation?
   bool isSim = getchar();
 
   // Vector size for benchmarking
@@ -134,48 +70,114 @@ int main()
   k.a = a;
   k.b = b;
   k.result = result;
-  k.threadIdx.x = 0;
-  k.threadIdx.y= 0;
 
 
-  //////////////////////////////////////////////////////////////
-  
-  puts("before mapping");
-  putchar('\n');
-  mapping_func<VecAdd>(&k);
-  Kernel *array[1] = {&k};
-  puts("Before Scheduler");
-  putchar('\n');
+
+  /////////////////////////////////////////////////////////////////////////////////
+   // Are we in simulation?
   
 
+  // Matrix size for benchmarking
+  int width = isSim ? 256 : 512;
+  int height = isSim ? 64 : 512;
+
+  // Input and output matrix data
+  nocl_aligned int matInData[width*height];
+  nocl_aligned int matOutData[width*height];
+
+  // Friendly array wrappers
+  Array2D<int> matIn(matInData, height, width);
+  Array2D<int> matOut(matOutData, width, height);
+
+  // Initialise inputs
+  seed = 1;
+  for (int i = 0; i < height; i++)
+    for (int j = 0; j < width; j++)
+      matIn[i][j] = i*256 + j;
+
+  // Number of loop iterations per block.  The number of iterations
+  // times the block Y dimension must equal the block X dimension.
+  const int itersPerBlock = 4;
+
+  // Instantiate kernel
+  Transpose<SIMTLanes> k2;
+
+  // Set block/grid dimensions
+  k2.blockDim.x = SIMTLanes;
+  k2.blockDim.y = SIMTLanes / itersPerBlock;
+  k2.gridDim.x = width / k2.blockDim.x;
+  k2.gridDim.y = height / (itersPerBlock * k2.blockDim.y);
+
+
+
+  // Assign parameters
+  k2.in = matIn;
+  k2.out = matOut;
+
+
+
+  /////////////////////////////////////////////////////////////////////////////////
+  //Setting static priorities of kernels
+  k.priority = 0;
+  k2.priority = 2;
+
+  // Invoke kernel
+
+  k.name = 0; //0 is VecAdd
+  k2.name = 1; //1 is Transpose
+  
+  Kernel *arr[2] = {&k, &k2};
+  mapping_func(&k2);
+  mapping_func(&k);
   int before = pebblesCycleCount();
-  scheduler(array, 1);
-  puts("After Scheduler");
-  putchar('\n');
+  scheduler(arr, 2);
+  int after = pebblesCycleCount();
+
+  
+
+
 
   // Check result
-  bool ok = true;
-  for (int i = 0; i < N; i++){
-      ok = ok && result[i] == a[i] + b[i];
-  }
 
+  bool ok = true;
+  for (int i = 0; i < N; i++)
+    ok = ok && result[i] == a[i] + b[i];
 
   // Display result
-  puts("Self test: ");
+  puts("Self test VecADD: ");
   puts(ok ? "PASSED" : "FAILED");
   putchar('\n');
 
-  puts("Before cycle_count: ");
-  puthex(before);
+
+  // Check result
+  ok = true;
+  bool check = false;
+  for (int i = 0; i < width; i++){
+    for (int j = 0; j < height; j++){
+      ok = ok && matOut[i][j] == matIn[j][i];
+    }
+  }
+  
+
+  // Display result
+  puts("Self test Matrix: ");
+  puts(ok ? "PASSED" : "FAILED");
   putchar('\n');
 
-  puts("After cycle_count: ");
-  puthex(k.cycle_count);
-  putchar('\n');
-
-  puts("Total cycle_count: ");
+  puts("Cycle taken by VecAdd: ");
   puthex(k.cycle_count - before);
   putchar('\n');
+
+
+  puts("Cycle taken by Matrix: ");
+  puthex(k2.cycle_count - before);
+  putchar('\n');
+
+  puts("Total cycle taken: ");
+  puthex(after - before);
+  putchar('\n');
+
+
   return 0;
  
 }

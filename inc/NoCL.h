@@ -199,6 +199,11 @@ struct Kernel {
 
   int cycle_count;
 
+  //There are 3 priorities 0, 1 and 2, 0 being the highest
+  int priority;
+
+  int name;
+
 };
 
 
@@ -260,27 +265,40 @@ template <typename K> __attribute__ ((noinline)) void _noclSIMTMain_() {
                             & k.map.blockYMask;
   k.blockIdx.x += blockXOffset;
   k.blockIdx.y += blockYOffset;
-
-  // Invoke kernel
+  
+  // Invoke kernel with static priority
   pebblesSIMTConverge();
-  uint32_t localBase = LOCAL_MEM_BASE + k.map.localBytesPerBlock * blockIdxWithinSM;
-  #if EnableCHERI      // TODO: constrain bounds
-      void* almighty = cheri_ddc_get();
-      k.shared.top = (char*) cheri_address_set(almighty, localBase);
-  #else
-    k.shared.top = (char*) localBase;
-  #endif
-    k.kernel();
-    pebblesSIMTConverge();
-    pebblesSIMTLocalBarrier();
-
+  for (int i = 0; i < k.priority+1; i++){
+    if(k.blockIdx.y < k.gridDim.y ){
+      if(k.blockIdx.x < k.gridDim.x){
+        uint32_t localBase = LOCAL_MEM_BASE +
+                 k.map.localBytesPerBlock * blockIdxWithinSM;
+        #if EnableCHERI
+        // TODO: constrain bounds
+        void* almighty = cheri_ddc_get();
+        k.shared.top = (char*) cheri_address_set(almighty, localBase);
+        #else
+          k.shared.top = (char*) localBase;
+        #endif
+        k.kernel();
+        pebblesSIMTConverge();
+        pebblesSIMTLocalBarrier();
+        k.blockIdx.x += k.map.numXBlocks;
+      }else{
+        pebblesSIMTConverge();
+        k.blockIdx.x = blockXOffset;
+        k.blockIdx.y += k.map.numYBlocks;
+        i--;
+      }
+    }
+  }
+    
   // Issue a fence to ensure all data has reached DRAM
   pebblesFence();
 
   // Terminate warp
   pebblesWarpTerminateSuccess();
 }
-
 
 /*while (k.blockIdx.y < k.gridDim.y) {
     while (k.blockIdx.x < k.gridDim.x) {
@@ -592,7 +610,7 @@ INLINE void __syncthreads() {
 
 
 
-//Implements Round Robin Scheduler
+//Implements Scheduler with static priority
 __attribute__ ((noinline)) int scheduler(Kernel **arr, int size){
     
     FixedQueue queue(arr , size);
@@ -601,33 +619,55 @@ __attribute__ ((noinline)) int scheduler(Kernel **arr, int size){
     for (int i = 0; i < size; i++)
     {
         queue.enqueue(arr[i]);
+        arr[i]->blockIdx.x = 0;
+        arr[i]->blockIdx.y = 0;
     }
 
     puts("Finshed creating Queue");
     putchar('\n');
     bool kernel_finished = false;
+    
     while (true)
     {
-        puts("Running kernel");
-        putchar('\n');
         kernel_finished = false;
         Kernel *k = queue.pop();
-        if(k->blockIdx.y < k->gridDim.y){
-            if(k->blockIdx.x < k->gridDim.x){
-                go_func(k);
-                k->blockIdx.x += k->map.numXBlocks;
-            }else{
-                k->blockIdx.x = 0;
-                k->blockIdx.y += k->map.numYBlocks;
-            }
+        if (k->name == 0){
+          puts("Running kerne VecAdd");
+          putchar('\n');
         }else{
-            kernel_finished = true;
-            k->cycle_count = pebblesCycleCount();
+          puts("Running kerne Matrix");
+          putchar('\n');
         }
 
+        if (k->name == 0){
+          puts("Running actual kernel VecAdd");
+          putchar('\n');
+          go_func(k);
+        }else{
+          puts("Running actual kerne Matrix");
+          putchar('\n');
+          go_func(k);
+        }
+       
+
+        for (int i = 0; i < k->priority+1; i++){
+          if(k->blockIdx.y < k->gridDim.y ){
+            if(k->blockIdx.x < k->gridDim.x){
+              k->blockIdx.x += k->map.numXBlocks;
+            }else{
+              k->blockIdx.x = 0;
+              k->blockIdx.y += k->map.numYBlocks;
+              i--;
+            }
+          }else{
+            kernel_finished = true;
+            k->cycle_count = pebblesCycleCount();
+          }
+        }
+    
         if(!kernel_finished){
-            queue.enqueue(k);
-        }else if(queue.head == queue.tail){
+          queue.enqueue(k);
+        }else if(kernel_finished && queue.head == queue.tail){
             break;  
         }
     }
