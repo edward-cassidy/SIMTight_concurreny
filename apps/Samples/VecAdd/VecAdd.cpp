@@ -42,6 +42,7 @@ int main()
   k.b = b;
   k.result = result;
 
+  //Testing Git
   // Invoke kernel
   noclRunKernelAndDumpStats(&k);
 
