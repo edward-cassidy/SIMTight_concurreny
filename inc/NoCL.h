@@ -228,8 +228,8 @@ template <typename K> __attribute__ ((noinline)) void _noclSIMTMain_() {
 
   // Invoke kernel
   pebblesSIMTConverge();
-  while (k.blockIdx.y < k.gridDim.y) {
-    while (k.blockIdx.x < k.gridDim.x) {
+  if (k.blockIdx.y < k.gridDim.y) {
+    if (k.blockIdx.x < k.gridDim.x) {
       uint32_t localBase = LOCAL_MEM_BASE +
                  k.map.localBytesPerBlock * blockIdxWithinSM;
       #if EnableCHERI
@@ -280,7 +280,7 @@ template <typename K> __attribute__ ((noinline))
 
 // Trigger SIMT kernel execution from CPU
 template <typename K> __attribute__ ((noinline))
-  int noclRunKernel(K* k) {
+  int noclMapping(K* k) {
     unsigned threadsPerBlock = k->blockDim.x * k->blockDim.y;
     unsigned threadsUsed = threadsPerBlock * k->gridDim.x * k->gridDim.y;
 
@@ -336,9 +336,15 @@ template <typename K> __attribute__ ((noinline))
 
     // End of mapping
     // --------------
+    return 0;
 
+  }
+  
+  template <typename K> __attribute__ ((noinline))
+  int noclRun(K* k) {
     // Set number of warps per block
     // (for fine-grained barrier synchronisation)
+    unsigned threadsPerBlock = k->blockDim.x * k->blockDim.y;
     unsigned warpsPerBlock = threadsPerBlock >> SIMTLogLanes;
     while (!pebblesSIMTCanPut()) {}
     pebblesSIMTSetWarpsPerBlock(warpsPerBlock);

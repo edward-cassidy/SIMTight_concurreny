@@ -33,6 +33,7 @@ int main()
   // Instantiate kernel
   VecAdd k;
 
+
   // Use a single block of threads
   k.blockDim.x = SIMTWarps * SIMTLanes;
 
@@ -44,7 +45,9 @@ int main()
 
   //Testing Git
   // Invoke kernel
-  noclRunKernelAndDumpStats(&k);
+  noclMapping(&k);
+  noclRun(&k);
+  
 
   // Check result
   bool ok = true;
