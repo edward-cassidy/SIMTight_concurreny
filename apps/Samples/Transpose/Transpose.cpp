@@ -65,6 +65,10 @@ int main()
   k.in = matIn;
   k.out = matOut;
 
+  //Need to assign blockidx to 0 
+  k.blockIdx.x = 0;
+  k.blockIdx.y = 0;
+
   // Invoke kernel
   noclRunKernelAndDumpStats(&k);
 

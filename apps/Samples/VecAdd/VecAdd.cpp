@@ -43,16 +43,21 @@ int main()
   k.b = b;
   k.result = result;
 
-  //Testing Git
+  //Need to initially assign blockidx to 0
+  k.blockIdx.x = 0;
+  k.blockIdx.y = 0;
+  
   // Invoke kernel
   noclMapping(&k);
   noclRun(&k);
-  
+
 
   // Check result
   bool ok = true;
   for (int i = 0; i < N; i++)
     ok = ok && result[i] == a[i] + b[i];
+
+
 
   // Display result
   puts("Self test: ");

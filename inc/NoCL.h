@@ -223,31 +223,25 @@ template <typename K> __attribute__ ((noinline)) void _noclSIMTMain_() {
                             & k.map.blockXMask;
   unsigned blockYOffset = (pebblesHartId() >> k.map.blockYShift)
                             & k.map.blockYMask;
-  k.blockIdx.x = blockXOffset;
-  k.blockIdx.y = blockYOffset;
+  //Since we're using "+=" we will have to assign blockidx to 0 intially
+  k.blockIdx.x += blockXOffset;
+  k.blockIdx.y += blockYOffset;
 
   // Invoke kernel
   pebblesSIMTConverge();
-  if (k.blockIdx.y < k.gridDim.y) {
-    if (k.blockIdx.x < k.gridDim.x) {
-      uint32_t localBase = LOCAL_MEM_BASE +
-                 k.map.localBytesPerBlock * blockIdxWithinSM;
-      #if EnableCHERI
-        // TODO: constrain bounds
-        void* almighty = cheri_ddc_get();
-        k.shared.top = (char*) cheri_address_set(almighty, localBase);
-      #else
-        k.shared.top = (char*) localBase;
-      #endif
-      k.kernel();
-      pebblesSIMTConverge();
-      pebblesSIMTLocalBarrier();
-      k.blockIdx.x += k.map.numXBlocks;
-    }
-    pebblesSIMTConverge();
-    k.blockIdx.x = blockXOffset;
-    k.blockIdx.y += k.map.numYBlocks;
-  }
+  uint32_t localBase = LOCAL_MEM_BASE +
+              k.map.localBytesPerBlock * blockIdxWithinSM;
+  #if EnableCHERI
+    // TODO: constrain bounds
+    void* almighty = cheri_ddc_get();
+    k.shared.top = (char*) cheri_address_set(almighty, localBase);
+  #else
+    k.shared.top = (char*) localBase;
+  #endif
+  k.kernel();
+  pebblesSIMTConverge();
+  pebblesSIMTLocalBarrier();
+  
 
   // Issue a fence to ensure all data has reached DRAM
   pebblesFence();
