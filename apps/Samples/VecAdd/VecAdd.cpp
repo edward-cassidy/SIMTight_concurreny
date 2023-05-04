@@ -12,6 +12,7 @@ struct VecAdd : Kernel {
   }
 };
 
+//Git Test
 int main()
 {
   // Are we in simulation?
