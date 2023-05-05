@@ -2,6 +2,8 @@
 #include <Rand.h>
 
 
+bool isSim = true;
+
 /////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 
@@ -371,29 +373,21 @@ struct VecAdd : Kernel {
 /////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 VecAdd vecAddCreate(int* a,int* b,int* result){
-  puts("test");
-  putchar('\n');
-  // Are we in simulation?
-  //bool isSim = getchar();
-
   // Vector size for benchmarking
-  int N = 3000;
-  puts("test2");
-  putchar('\n');
+  int N = isSim ? 3000 : 9000;
+
+
   // Initialise inputs
   uint32_t seed = 1;
   for (int i = 0; i < N; i++) {
     a[i] = rand15(&seed);
     b[i] = rand15(&seed);
   }
-  puts("test3");
-  putchar('\n');
+  
 
   // Instantiate kernel
   VecAdd k;
 
-  puts("test4");
-  putchar('\n');
   // Use a single block of threads
   k.blockDim.x = SIMTWarps * SIMTLanes;
 
@@ -407,9 +401,7 @@ VecAdd vecAddCreate(int* a,int* b,int* result){
 
 Transpose<SIMTLanes> transposeCreate(int* matInData, int* matOutData)
 {
-  // Are we in simulation?
-  bool isSim = getchar();
-
+  
   // Matrix size for benchmarking
   int width = isSim ? 256 : 512;
   int height = isSim ? 64 : 512;
@@ -446,13 +438,11 @@ Transpose<SIMTLanes> transposeCreate(int* matInData, int* matOutData)
 
 SparseMatVecMul sparseMatVecMulCreate(int* dataT, int* indicesT,int* vecIn, int* vecOut, int* data, int* indices)
 {
-  // Are we in simulation?
-  bool isSim = getchar();
-
+  
   // Vector and matrix dimensions for benchmarking
   // Should be powers of two
-  int width = isSim ? 256 : 2048;
-  int height = isSim ? 64 : 2048;
+  int width = isSim ? 256 : 512;
+  int height = isSim ? 64 : 512;
 
   // Sparsity of matrix (power of two)
   int sparsity = 8;
@@ -509,12 +499,10 @@ SparseMatVecMul sparseMatVecMulCreate(int* dataT, int* indicesT,int* vecIn, int*
 
 Scan<SIMTWarps * SIMTLanes> scanCreate(int* in, int* out)
 {
-  // Are we in simulation?
-  bool isSim = getchar();
-
+  
   // Vector size for benchmarking
   // Should divide evenly by SIMT thread count
-  int N = isSim ? 4096 : 1024000;
+  int N = isSim ? 4096 : 8192;
 
   // Initialise inputs
   uint32_t seed = 1;
@@ -538,11 +526,9 @@ Scan<SIMTWarps * SIMTLanes> scanCreate(int* in, int* out)
 
 Reduce<SIMTWarps * SIMTLanes> reduceCreate(int* in, int* sum)
 {
-  // Are we in simulation?
-  bool isSim = getchar();
 
   // Vector size for benchmarking
-  int N = isSim ? 3000 : 1000000;
+  int N = isSim ? 3000 : 9000;
 
   // Initialise inputs
   uint32_t seed = 1;
@@ -571,12 +557,10 @@ Reduce<SIMTWarps * SIMTLanes> reduceCreate(int* in, int* sum)
 
 MatVecMul<SIMTLanes> matVecMulCreate(int* mat, int* vecIn, int* vecOut)
 {
-  // Are we in simulation?
-  bool isSim = getchar();
 
   // Vector and matrix dimensions for benchmarking
-  int width = isSim ? 128 : 1024;
-  int height = isSim ? 64 : 1024;
+  int width = isSim ? 128 : 512;
+  int height = isSim ? 64 : 512;
 
   // Initialise inputs
   uint32_t seed = 1;
@@ -606,12 +590,10 @@ MatVecMul<SIMTLanes> matVecMulCreate(int* mat, int* vecIn, int* vecOut)
 
 MatMul<SIMTLanes> matMulCreate(int* matA, int* matB, int* matC, int* matCheck)
 {
-  // Are we in simulation?
-  bool isSim = getchar();
-
+  
   // Matrix dimensions for benchmarking
   // (Must be a multiple of SIMTLanes)
-  int size = isSim ? 64 : 256;
+  int size = isSim ? 64 : 128;
 
 
   // Initialise matrices
@@ -645,11 +627,8 @@ MatMul<SIMTLanes> matMulCreate(int* matA, int* matB, int* matC, int* matCheck)
 
 Histogram histogramCreate(unsigned char* input, int* bins)
 {
-  // Are we in simulation?
-  bool isSim = getchar();
-
   // Vector size for benchmarking
-  int N = isSim ? 3000 : 1000000;
+  int N = isSim ? 3000 : 9000;
 
   // Initialise inputs
   uint32_t seed = 1;
@@ -672,12 +651,10 @@ Histogram histogramCreate(unsigned char* input, int* bins)
 
 BitonicSortLocal bitonicSortLocalCreate(unsigned int* srcKeys,unsigned int* srcVals,unsigned int* dstKeys,unsigned int* dstVals)
 {
-  // Are we in simulation?
-  bool isSim = getchar();
 
   // Array size and number of arrays for benchmarking
   int N = LOCAL_SIZE_LIMIT;
-  int batch = isSim ? 4 : 32;
+  int batch = isSim ? 4 : 8;
 
   // Initialise inputs
   uint32_t seed = 1;
@@ -721,8 +698,6 @@ int vecAddTest(VecAdd k)
 
 int transposeTest(Transpose<SIMTLanes> k)
 {
-  // Are we in simulation?
-  bool isSim = getchar();
 
   // Matrix size for benchmarking
   int width = isSim ? 256 : 512;
@@ -874,5 +849,5 @@ int bitonicSortLocalTest(BitonicSortLocal k)
 
 int main()
 {
- return 0;
+  return 0;
 }
