@@ -28,6 +28,8 @@
 // Utility functions
 // =================
 
+
+
 // Return input where only first non-zero bit is set, starting from LSB
 inline unsigned firstHot(unsigned x) {
   return x & (~x + 1);
@@ -203,6 +205,32 @@ struct Kernel {
 
 };
 
+//Queue that is used by the scheduler
+class FixedQueue
+{
+    public:
+
+        Kernel **arr;
+        int head;
+        int tail;
+        int size;
+
+        FixedQueue(Kernel **array, int size): head(0), tail(0), arr(array), size(size){}
+
+        Kernel * pop(){
+            int temp = head;
+            head = (head + 1)%size;
+            return arr[temp];
+        }
+
+        void enqueue(Kernel *k){
+            arr[tail] = k;
+            tail = (tail+1)%size;
+        }
+        
+};
+
+
 // Kernel invocation
 // =================
 
@@ -364,7 +392,7 @@ template <typename K> __attribute__ ((noinline))
   }
 
 
-  template <typename K> __attribute__ ((noinline))
+template <typename K> __attribute__ ((noinline))
   int noclRunKernel(K* k) {
    
     while (!pebblesSIMTCanPut()) {}
@@ -384,6 +412,45 @@ template <typename K> __attribute__ ((noinline))
     while (!pebblesSIMTCanGet()) {}
     return pebblesSIMTGet();
   }
+
+//Round Robin Scheduler
+__attribute__ ((noinline)) int noclScheduler(Kernel **arr, int size){
+    
+  FixedQueue queue(arr , size);
+
+  //Setting the initial blockIds to 0
+  for (int i = 0; i < size; i++)
+  {
+      arr[i]->blockIdx.x = 0;
+      arr[i]->blockIdx.y = 0;
+  }
+
+
+  bool kernel_finished = false;
+  while (true)
+  {
+      kernel_finished = false;
+      Kernel *k = queue.pop();
+      if(k->blockIdx.y < k->gridDim.y){
+          if(k->blockIdx.x < k->gridDim.x){
+              noclRunKernel(k);
+              k->blockIdx.x += k->map.numXBlocks;
+          }else{
+              k->blockIdx.x = 0;
+              k->blockIdx.y += k->map.numYBlocks;
+          }
+      }else{
+          kernel_finished = true;
+      }
+
+      if(!kernel_finished){
+          queue.enqueue(k);
+      }else if(queue.head == queue.tail){
+          break;  
+      }
+  }
+  return 0;
+}
 
 // Ask SIMT core for given performance stat
 inline void printStat(const char* str, uint32_t statId)
