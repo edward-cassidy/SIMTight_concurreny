@@ -438,6 +438,8 @@ __attribute__ ((noinline)) int noclScheduler(Kernel **arr, int size){
           }else{
               k->blockIdx.x = 0;
               k->blockIdx.y += k->map.numYBlocks;
+              noclRunKernel(k);
+              k->blockIdx.x += k->map.numXBlocks;
           }
       }else{
           kernel_finished = true;
