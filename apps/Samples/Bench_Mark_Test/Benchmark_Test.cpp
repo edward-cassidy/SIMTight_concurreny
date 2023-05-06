@@ -805,7 +805,7 @@ int matMulTest(MatMul<SIMTLanes> k, int* matCheck)
       ok = ok && matCheck[i*size+j] == k.C[i*size+j];
 
   // Display result
-  puts("matMulTest Self test: ");
+  puts("MatMul Self test: ");
   puts(ok ? "PASSED" : "FAILED");
   putchar('\n');
 
@@ -939,83 +939,21 @@ int main()
   uint64_t before;
   uint64_t after;
   
-  if(timing_overall){
-    before = pebblesCycleCount();
-    noclRunKernel(&va);
-    noclRunKernel(&tp);
-    noclRunKernel(&smvm);
-    noclRunKernel(&sn);
-    noclRunKernel(&rd);
-    noclRunKernel(&mvm);
-    noclRunKernel(&mm);
-    noclRunKernel(&hg);
-    noclRunKernel(&bsl);
-    after = pebblesCycleCount();
-    puthex64(after-before);
-    putchar('\n');
+  noclMapping(&tp);
 
-  }else{
-    before = pebblesCycleCount();
-    noclRunKernel(&va);
-    after = pebblesCycleCount();
-    puthex64(after-before);
-    putchar('\n');
-    before = pebblesCycleCount();
-    noclRunKernel(&tp);
-    after = pebblesCycleCount();
-    puthex64(after-before);
-    putchar('\n');
-    before = pebblesCycleCount();
-    noclRunKernel(&smvm);
-    after = pebblesCycleCount();
-    puthex64(after-before);
-    putchar('\n');
-    before = pebblesCycleCount();
-    noclRunKernel(&sn);
-    after = pebblesCycleCount();
-    puthex64(after-before);
-    putchar('\n');
-    before = pebblesCycleCount();
-    noclRunKernel(&rd);
-    after = pebblesCycleCount();
-    puthex64(before);
-    puthex64(after-before);
-    putchar('\n');
-    before = pebblesCycleCount();
-    noclRunKernel(&mvm);
-    after = pebblesCycleCount();
-    puthex64(after-before);
-    putchar('\n');
-    before = pebblesCycleCount();
-    noclRunKernel(&mm);
-    after = pebblesCycleCount();
-    puthex64(after-before);
-    putchar('\n');
-    before = pebblesCycleCount();
-    noclRunKernel(&hg);
-    after = pebblesCycleCount();
-    puthex64(before);
-    puthex64(after-before);
-    putchar('\n');
-    before = pebblesCycleCount();
-    noclRunKernel(&bsl);
-    after = pebblesCycleCount();
-    puthex64(after-before);
-    putchar('\n');
+  tp.blockIdx.x = 0;
+  tp.blockIdx.y = 0;
+
+  while (tp.blockIdx.y < tp.gridDim.y) {
+    while (tp.blockIdx.x < tp.gridDim.x) {
+      noclRunKernel(&tp);
+      tp.blockIdx.x += tp.map.numXBlocks;
+    }
+    pebblesSIMTConverge();
+    tp.blockIdx.x = 0;
+    tp.blockIdx.y += tp.map.numYBlocks;
   }
 
- 
-
-  vecAddTest(va);
   transposeTest(tp);
-  sparseMatVecMulTest(smvm,data,indices);
-  scanTest(sn);
-  reduceTest(rd);
-  matVecMulTest(mvm);
-  matMulTest(mm, matCheck);
-  histogramTest(hg);
-  bitonicSortLocalTest(bsl);
-
-
   return 0;
 }

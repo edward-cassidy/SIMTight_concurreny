@@ -191,6 +191,9 @@ struct Kernel {
 
   // Mapping between SIMT threads and CUDA thread/block indices
   KernelMapping map;
+
+  // Set number of warps per block
+  unsigned warpsPerBlock;
 };
 
 // Kernel invocation
@@ -223,13 +226,13 @@ template <typename K> __attribute__ ((noinline)) void _noclSIMTMain_() {
                             & k.map.blockXMask;
   unsigned blockYOffset = (pebblesHartId() >> k.map.blockYShift)
                             & k.map.blockYMask;
-  k.blockIdx.x = blockXOffset;
-  k.blockIdx.y = blockYOffset;
+  k.blockIdx.x += blockXOffset;
+  k.blockIdx.y += blockYOffset;
 
   // Invoke kernel
   pebblesSIMTConverge();
-  while (k.blockIdx.y < k.gridDim.y) {
-    while (k.blockIdx.x < k.gridDim.x) {
+  if (k.blockIdx.y < k.gridDim.y) {
+    if (k.blockIdx.x < k.gridDim.x) {
       uint32_t localBase = LOCAL_MEM_BASE +
                  k.map.localBytesPerBlock * blockIdxWithinSM;
       #if EnableCHERI
@@ -242,11 +245,8 @@ template <typename K> __attribute__ ((noinline)) void _noclSIMTMain_() {
       k.kernel();
       pebblesSIMTConverge();
       pebblesSIMTLocalBarrier();
-      k.blockIdx.x += k.map.numXBlocks;
     }
     pebblesSIMTConverge();
-    k.blockIdx.x = blockXOffset;
-    k.blockIdx.y += k.map.numYBlocks;
   }
 
   // Issue a fence to ensure all data has reached DRAM
@@ -280,9 +280,11 @@ template <typename K> __attribute__ ((noinline))
 
 // Trigger SIMT kernel execution from CPU
 template <typename K> __attribute__ ((noinline))
-  int noclRunKernel(K* k) {
+  int noclMapping(K* k) {
+
     unsigned threadsPerBlock = k->blockDim.x * k->blockDim.y;
     unsigned threadsUsed = threadsPerBlock * k->gridDim.x * k->gridDim.y;
+    unsigned warpsPerBlock = threadsPerBlock >> SIMTLogLanes;
 
     // Limitations for simplicity (TODO: relax)
     assert(k->blockDim.z == 1,
@@ -301,6 +303,9 @@ template <typename K> __attribute__ ((noinline))
     // Map hardware threads to CUDA thread&block indices
     // -------------------------------------------------
 
+    // Set number of warps per block
+    // (for fine-grained barrier synchronisation)
+    k->warpsPerBlock = warpsPerBlock;
     // Block dimensions are all powers of two
     k->map.threadXMask = k->blockDim.x - 1;
     k->map.threadYMask = k->blockDim.y - 1;
@@ -334,14 +339,17 @@ template <typename K> __attribute__ ((noinline))
     unsigned localBytes = 4 << (SIMTLogSRAMBanks + SIMTLogWordsPerSRAMBank);
     k->map.localBytesPerBlock = localBytes / blocksPerSM;
 
-    // End of mapping
-    // --------------
+    return 0;
 
-    // Set number of warps per block
-    // (for fine-grained barrier synchronisation)
-    unsigned warpsPerBlock = threadsPerBlock >> SIMTLogLanes;
+  }
+
+
+  template <typename K> __attribute__ ((noinline))
+  int noclRunKernel(K* k) {
+   
+    
     while (!pebblesSIMTCanPut()) {}
-    pebblesSIMTSetWarpsPerBlock(warpsPerBlock);
+    pebblesSIMTSetWarpsPerBlock(k->warpsPerBlock);
 
     // Set address of kernel closure
     #if EnableCHERI
