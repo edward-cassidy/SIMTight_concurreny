@@ -194,6 +194,13 @@ struct Kernel {
 
   // Set number of warps per block
   unsigned warpsPerBlock;
+
+  //Address of kernel closure
+  uint32_t kernelAddr;
+
+  //Address of entry point for SIMT core
+  uint32_t entryAddr;
+
 };
 
 // Kernel invocation
@@ -303,9 +310,6 @@ template <typename K> __attribute__ ((noinline))
     // Map hardware threads to CUDA thread&block indices
     // -------------------------------------------------
 
-    // Set number of warps per block
-    // (for fine-grained barrier synchronisation)
-    k->warpsPerBlock = warpsPerBlock;
     // Block dimensions are all powers of two
     k->map.threadXMask = k->blockDim.x - 1;
     k->map.threadYMask = k->blockDim.y - 1;
@@ -339,6 +343,22 @@ template <typename K> __attribute__ ((noinline))
     unsigned localBytes = 4 << (SIMTLogSRAMBanks + SIMTLogWordsPerSRAMBank);
     k->map.localBytesPerBlock = localBytes / blocksPerSM;
 
+
+    //Set the necessary Kernel struct members for noclRunKernel
+    
+    // Set number of warps per block
+    // (for fine-grained barrier synchronisation)
+    k->warpsPerBlock = warpsPerBlock;
+
+    #if EnableCHERI
+      void (*entryFun)() = _noclSIMTEntry_<K>;
+      k->entryAddr = cheri_address_get(entryFun);
+      k->kernelAddr = cheri_address_get(k);
+    #else
+      k->entryAddr = (uint32_t) _noclSIMTEntry_<K>;
+      k->kernelAddr = (uint32_t) k;
+    #endif
+
     return 0;
 
   }
@@ -347,31 +367,18 @@ template <typename K> __attribute__ ((noinline))
   template <typename K> __attribute__ ((noinline))
   int noclRunKernel(K* k) {
    
-    
     while (!pebblesSIMTCanPut()) {}
     pebblesSIMTSetWarpsPerBlock(k->warpsPerBlock);
 
-    // Set address of kernel closure
-    #if EnableCHERI
-      uint32_t kernelAddr = cheri_address_get(k);
-    #else
-      uint32_t kernelAddr = (uint32_t) k;
-    #endif
     while (!pebblesSIMTCanPut()) {}
-    pebblesSIMTSetKernel(kernelAddr);
+    pebblesSIMTSetKernel(k->kernelAddr);
 
     // Flush cache
     pebblesCacheFlushFull();
 
     // Start kernel on SIMT core
-    #if EnableCHERI
-      void (*entryFun)() = _noclSIMTEntry_<K>;
-      uint32_t entryAddr = cheri_address_get(entryFun);
-    #else
-      uint32_t entryAddr = (uint32_t) _noclSIMTEntry_<K>;
-    #endif
     while (!pebblesSIMTCanPut()) {}
-    pebblesSIMTStartKernel(entryAddr);
+    pebblesSIMTStartKernel(k->entryAddr);
 
     // Wait for kernel response
     while (!pebblesSIMTCanGet()) {}

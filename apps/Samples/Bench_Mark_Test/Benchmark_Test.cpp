@@ -943,17 +943,23 @@ int main()
 
   tp.blockIdx.x = 0;
   tp.blockIdx.y = 0;
+  int counter = 0;
 
-  while (tp.blockIdx.y < tp.gridDim.y) {
-    while (tp.blockIdx.x < tp.gridDim.x) {
-      noclRunKernel(&tp);
-      tp.blockIdx.x += tp.map.numXBlocks;
+  Kernel* k = &tp;
+
+  while (k->blockIdx.y < k->gridDim.y) {
+    while (k->blockIdx.x < k->gridDim.x) {
+      noclRunKernel(k);
+      counter += 1;
+      k->blockIdx.x += k->map.numXBlocks;
     }
     pebblesSIMTConverge();
-    tp.blockIdx.x = 0;
-    tp.blockIdx.y += tp.map.numYBlocks;
+    k->blockIdx.x = 0;
+    k->blockIdx.y += k->map.numYBlocks;
   }
 
   transposeTest(tp);
+  putchar('\n');
+  puthex(counter);
   return 0;
 }
