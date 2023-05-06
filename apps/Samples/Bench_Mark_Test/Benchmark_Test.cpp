@@ -1,5 +1,6 @@
 #include <NoCL.h>
 #include <Rand.h>
+#include <Pebbles/CSRs/CycleCount.h>
 
 
 bool isSim = false;
@@ -846,6 +847,19 @@ int bitonicSortLocalTest(BitonicSortLocal k)
 }
 
 
+int puthex64(uint64_t x)
+{
+  int count = 0;
+
+  for (count = 0; count < 16; count++) {
+    unsigned nibble = x >> 60;
+    putchar(nibble > 9 ? ('a'-10)+nibble : '0'+nibble);
+    x = x << 4;
+  }
+
+  return 8;
+}
+
 
 int main()
 {
@@ -919,6 +933,88 @@ int main()
   simt_aligned unsigned dstKeys[N*batch], dstVals[N*batch];
 
   BitonicSortLocal bsl = bitonicSortLocalCreate(srcKeys,srcVals,dstKeys,dstVals);
+
+
+  bool timing_overall = true;
+  uint64_t before;
+  uint64_t after;
+  
+  if(timing_overall){
+    before = pebblesCycleCount();
+    noclRunKernel(&va);
+    noclRunKernel(&tp);
+    noclRunKernel(&smvm);
+    noclRunKernel(&sn);
+    noclRunKernel(&rd);
+    noclRunKernel(&mvm);
+    noclRunKernel(&mm);
+    noclRunKernel(&hg);
+    noclRunKernel(&bsl);
+    after = pebblesCycleCount();
+    puthex64(after-before);
+    putchar('\n');
+
+  }else{
+    before = pebblesCycleCount();
+    noclRunKernel(&va);
+    after = pebblesCycleCount();
+    puthex64(after-before);
+    putchar('\n');
+    before = pebblesCycleCount();
+    noclRunKernel(&tp);
+    after = pebblesCycleCount();
+    puthex64(after-before);
+    putchar('\n');
+    before = pebblesCycleCount();
+    noclRunKernel(&smvm);
+    after = pebblesCycleCount();
+    puthex64(after-before);
+    putchar('\n');
+    before = pebblesCycleCount();
+    noclRunKernel(&sn);
+    after = pebblesCycleCount();
+    puthex64(after-before);
+    putchar('\n');
+    before = pebblesCycleCount();
+    noclRunKernel(&rd);
+    after = pebblesCycleCount();
+    puthex64(before);
+    puthex64(after-before);
+    putchar('\n');
+    before = pebblesCycleCount();
+    noclRunKernel(&mvm);
+    after = pebblesCycleCount();
+    puthex64(after-before);
+    putchar('\n');
+    before = pebblesCycleCount();
+    noclRunKernel(&mm);
+    after = pebblesCycleCount();
+    puthex64(after-before);
+    putchar('\n');
+    before = pebblesCycleCount();
+    noclRunKernel(&hg);
+    after = pebblesCycleCount();
+    puthex64(before);
+    puthex64(after-before);
+    putchar('\n');
+    before = pebblesCycleCount();
+    noclRunKernel(&bsl);
+    after = pebblesCycleCount();
+    puthex64(after-before);
+    putchar('\n');
+  }
+
+ 
+
+  vecAddTest(va);
+  transposeTest(tp);
+  sparseMatVecMulTest(smvm,data,indices);
+  scanTest(sn);
+  reduceTest(rd);
+  matVecMulTest(mvm);
+  matMulTest(mm, matCheck);
+  histogramTest(hg);
+  bitonicSortLocalTest(bsl);
 
 
   return 0;
