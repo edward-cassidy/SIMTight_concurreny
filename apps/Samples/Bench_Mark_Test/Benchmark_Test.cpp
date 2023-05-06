@@ -2,7 +2,7 @@
 #include <Rand.h>
 
 
-bool isSim = true;
+bool isSim = false;
 
 /////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -374,8 +374,7 @@ struct VecAdd : Kernel {
 
 VecAdd vecAddCreate(int* a,int* b,int* result){
   // Vector size for benchmarking
-  int N = isSim ? 3000 : 9000;
-
+  int N = isSim ? 3000 : 1000000;
 
   // Initialise inputs
   uint32_t seed = 1;
@@ -441,8 +440,8 @@ SparseMatVecMul sparseMatVecMulCreate(int* dataT, int* indicesT,int* vecIn, int*
   
   // Vector and matrix dimensions for benchmarking
   // Should be powers of two
-  int width = isSim ? 256 : 512;
-  int height = isSim ? 64 : 512;
+  int width = isSim ? 256 : 2048;
+  int height = isSim ? 64 : 2048;
 
   // Sparsity of matrix (power of two)
   int sparsity = 8;
@@ -502,7 +501,7 @@ Scan<SIMTWarps * SIMTLanes> scanCreate(int* in, int* out)
   
   // Vector size for benchmarking
   // Should divide evenly by SIMT thread count
-  int N = isSim ? 4096 : 8192;
+  int N = isSim ? 4096 : 1024000;
 
   // Initialise inputs
   uint32_t seed = 1;
@@ -528,7 +527,7 @@ Reduce<SIMTWarps * SIMTLanes> reduceCreate(int* in, int* sum)
 {
 
   // Vector size for benchmarking
-  int N = isSim ? 3000 : 9000;
+  int N = isSim ? 3000 : 1000000;
 
   // Initialise inputs
   uint32_t seed = 1;
@@ -559,8 +558,8 @@ MatVecMul<SIMTLanes> matVecMulCreate(int* mat, int* vecIn, int* vecOut)
 {
 
   // Vector and matrix dimensions for benchmarking
-  int width = isSim ? 128 : 512;
-  int height = isSim ? 64 : 512;
+  int width = isSim ? 128 : 1024;
+  int height = isSim ? 64 : 1024;
 
   // Initialise inputs
   uint32_t seed = 1;
@@ -593,7 +592,7 @@ MatMul<SIMTLanes> matMulCreate(int* matA, int* matB, int* matC, int* matCheck)
   
   // Matrix dimensions for benchmarking
   // (Must be a multiple of SIMTLanes)
-  int size = isSim ? 64 : 128;
+  int size = isSim ? 64 : 256;
 
 
   // Initialise matrices
@@ -628,7 +627,7 @@ MatMul<SIMTLanes> matMulCreate(int* matA, int* matB, int* matC, int* matCheck)
 Histogram histogramCreate(unsigned char* input, int* bins)
 {
   // Vector size for benchmarking
-  int N = isSim ? 3000 : 9000;
+  int N = isSim ? 3000 : 1000000;
 
   // Initialise inputs
   uint32_t seed = 1;
@@ -654,7 +653,7 @@ BitonicSortLocal bitonicSortLocalCreate(unsigned int* srcKeys,unsigned int* srcV
 
   // Array size and number of arrays for benchmarking
   int N = LOCAL_SIZE_LIMIT;
-  int batch = isSim ? 4 : 8;
+  int batch = isSim ? 4 : 32;
 
   // Initialise inputs
   uint32_t seed = 1;
@@ -847,7 +846,80 @@ int bitonicSortLocalTest(BitonicSortLocal k)
 }
 
 
+
 int main()
 {
+
+  // Are we in simulation?
+  bool isSim = getchar();
+
+  // Vector Input and creation
+  int N = isSim ? 3000 : 1000000;
+  simt_aligned int a[N], b[N], result[N];
+  VecAdd va = vecAddCreate(a,b,result);
+
+
+  // Matrix size for benchmarking
+  int width = isSim ? 256 : 512;
+  int height = isSim ? 64 : 512;
+  nocl_aligned int matInData[width*height];
+  nocl_aligned int matOutData[width*height];
+  Transpose<SIMTLanes> tp = transposeCreate(matInData, matOutData);
+
+  // Vector and matrix dimensions for benchmarking
+  width = isSim ? 256 : 2048;
+  height = isSim ? 64 : 2048;
+  int sparsity = 8;
+  int samplesPerRow = width / sparsity;
+  simt_aligned int data[samplesPerRow * height],
+                   indices[samplesPerRow * height],
+                   dataT[samplesPerRow * height],
+                   indicesT[samplesPerRow * height],
+                   vecIn[width*2], vecOut[height];
+  SparseMatVecMul smvm = sparseMatVecMulCreate(dataT,indicesT,vecIn,vecOut,data,indices);
+
+  // Vector size for benchmarking
+  N = isSim ? 4096 : 1024000;
+  simt_aligned int in[N], out[N];
+  Scan<SIMTWarps * SIMTLanes> sn = scanCreate(in,out);
+
+
+  // Vector size for benchmarking
+  N = isSim ? 3000 : 1000000;
+  simt_aligned int reduceIn[N];
+  int sum;
+  Reduce<SIMTWarps * SIMTLanes> rd = reduceCreate(reduceIn, &sum);
+
+  // Vector and matrix dimensions for benchmarking
+  width = isSim ? 128 : 1024;
+  height = isSim ? 64 : 1024;
+  simt_aligned int mat[height*width], mvmVecIn[width], mvmVecOut[height];
+
+  MatVecMul<SIMTLanes> mvm = matVecMulCreate(mat,mvmVecIn, mvmVecOut);
+
+  // Matrix dimensions for benchmarking
+  // (Must be a multiple of SIMTLanes)
+  int size = isSim ? 64 : 256;
+  simt_aligned int matA[size*size], matB[size*size],
+                   matC[size*size], matCheck[size*size];
+  MatMul<SIMTLanes> mm = matMulCreate(matA,matB,matC,matCheck);
+
+  // Vector size for benchmarking
+  N = isSim ? 3000 : 1000000;
+  nocl_aligned unsigned char input[N];
+  nocl_aligned int bins[256];
+
+  Histogram hg = histogramCreate(input,bins);
+
+
+  // Array size and number of arrays for benchmarking
+  N = LOCAL_SIZE_LIMIT;
+  int batch = isSim ? 4 : 32;
+  simt_aligned unsigned srcKeys[N*batch], srcVals[N*batch];
+  simt_aligned unsigned dstKeys[N*batch], dstVals[N*batch];
+
+  BitonicSortLocal bsl = bitonicSortLocalCreate(srcKeys,srcVals,dstKeys,dstVals);
+
+
   return 0;
 }
