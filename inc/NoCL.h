@@ -203,6 +203,8 @@ struct Kernel {
   //Address of entry point for SIMT core
   uint32_t entryAddr;
 
+  unsigned kernelID;
+
 };
 
 //Queue that is used by the scheduler
@@ -413,8 +415,27 @@ template <typename K> __attribute__ ((noinline))
     return pebblesSIMTGet();
   }
 
+int puthex64(uint64_t x)
+{
+  int count = 0;
+
+  for (count = 0; count < 16; count++) {
+    unsigned nibble = x >> 60;
+    putchar(nibble > 9 ? ('a'-10)+nibble : '0'+nibble);
+    x = x << 4;
+  }
+
+  return 8;
+}
+
+struct Output
+{
+  uint64_t intitial_time;
+  uint64_t final_time;
+};
+
 //Round Robin Scheduler
-__attribute__ ((noinline)) int noclScheduler(Kernel **arr, int size){
+__attribute__ ((noinline)) Output noclScheduler(Kernel **arr, int size, int ID){
     
   FixedQueue queue(arr , size);
 
@@ -425,23 +446,47 @@ __attribute__ ((noinline)) int noclScheduler(Kernel **arr, int size){
       arr[i]->blockIdx.y = 0;
   }
 
+  Output output;
 
+  bool first_round = true;
+  bool last_round = true;
   bool kernel_finished = false;
   while (true)
   {
+
       kernel_finished = false;
       Kernel *k = queue.pop();
+
+      if(first_round){
+        if(k->kernelID == ID){
+          output.intitial_time = pebblesCycleCount();
+          first_round = false;
+        }
+      }
       if(k->blockIdx.y < k->gridDim.y){
           if(k->blockIdx.x < k->gridDim.x){
               noclRunKernel(k);
               k->blockIdx.x += k->map.numXBlocks;
-          }else{
-              k->blockIdx.x = 0;
-              k->blockIdx.y += k->map.numYBlocks;
+              if(!(k->blockIdx.x < k->gridDim.x)){
+                k->blockIdx.x = 0;
+                k->blockIdx.y += k->map.numYBlocks;
+                if(!(k->blockIdx.y < k->gridDim.y)){
+                  kernel_finished = true;
+                }
+              }
           }
-      }else{
-          kernel_finished = true;
       }
+      
+    
+      if(kernel_finished){
+        if(last_round){
+            if(k->kernelID == ID){
+              output.final_time = pebblesCycleCount();
+              last_round = false;
+            }
+          } 
+      }
+          
 
       if(!kernel_finished){
           queue.enqueue(k);
@@ -449,7 +494,7 @@ __attribute__ ((noinline)) int noclScheduler(Kernel **arr, int size){
           break;  
       }
   }
-  return 0;
+  return output;
 }
 
 // Ask SIMT core for given performance stat

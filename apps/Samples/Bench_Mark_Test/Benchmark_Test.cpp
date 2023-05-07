@@ -442,7 +442,7 @@ SparseMatVecMul sparseMatVecMulCreate(int* dataT, int* indicesT,int* vecIn, int*
   // Vector and matrix dimensions for benchmarking
   // Should be powers of two
   int width = isSim ? 256 : 2048;
-  int height = isSim ? 64 : 2048;
+  int height = isSim ? 64 : 16384;
 
   // Sparsity of matrix (power of two)
   int sparsity = 8;
@@ -654,7 +654,7 @@ BitonicSortLocal bitonicSortLocalCreate(unsigned int* srcKeys,unsigned int* srcV
 
   // Array size and number of arrays for benchmarking
   int N = LOCAL_SIZE_LIMIT;
-  int batch = isSim ? 4 : 32;
+  int batch = isSim ? 4 : 64;
 
   // Initialise inputs
   uint32_t seed = 1;
@@ -847,18 +847,7 @@ int bitonicSortLocalTest(BitonicSortLocal k)
 }
 
 
-int puthex64(uint64_t x)
-{
-  int count = 0;
 
-  for (count = 0; count < 16; count++) {
-    unsigned nibble = x >> 60;
-    putchar(nibble > 9 ? ('a'-10)+nibble : '0'+nibble);
-    x = x << 4;
-  }
-
-  return 8;
-}
 
 
 int main()
@@ -882,7 +871,7 @@ int main()
 
   // Vector and matrix dimensions for benchmarking
   width = isSim ? 256 : 2048;
-  height = isSim ? 64 : 2048;
+  height = isSim ? 64 : 16384;
   int sparsity = 8;
   int samplesPerRow = width / sparsity;
   simt_aligned int data[samplesPerRow * height],
@@ -928,7 +917,7 @@ int main()
 
   // Array size and number of arrays for benchmarking
   N = LOCAL_SIZE_LIMIT;
-  int batch = isSim ? 4 : 32;
+  int batch = isSim ? 4 : 64;
   simt_aligned unsigned srcKeys[N*batch], srcVals[N*batch];
   simt_aligned unsigned dstKeys[N*batch], dstVals[N*batch];
 
@@ -939,27 +928,54 @@ int main()
   uint64_t before;
   uint64_t after;
   
+  noclMapping(&va);
   noclMapping(&tp);
+  noclMapping(&mm);
+  noclMapping(&bsl);
+  noclMapping(&smvm);
+  noclMapping(&sn);
+  noclMapping(&rd);
+  noclMapping(&mvm);
+  noclMapping(&hg);
 
-  tp.blockIdx.x = 0;
-  tp.blockIdx.y = 0;
-  int counter = 0;
+  Kernel * arr[9] = {&va, &tp, &mm, &bsl, &smvm, &sn, &rd, &mvm, &hg};
+  
+  
+  uint64_t latency;
+  uint64_t compute_times;
 
-  Kernel* k = &tp;
-
-  while (k->blockIdx.y < k->gridDim.y) {
-    while (k->blockIdx.x < k->gridDim.x) {
-      noclRunKernel(k);
-      counter += 1;
-      k->blockIdx.x += k->map.numXBlocks;
-    }
-    pebblesSIMTConverge();
-    k->blockIdx.x = 0;
-    k->blockIdx.y += k->map.numYBlocks;
+  for (int i = 0; i < 9; i++)
+  {
+    arr[i]->kernelID = i;
   }
 
-  transposeTest(tp);
+  before = pebblesCycleCount();
+  Output output = noclScheduler(arr, 9, 8);
+  latency = output.final_time - before;
+  compute_times= output.final_time - output.intitial_time;
+
+  puts("Latency:");
   putchar('\n');
-  puthex(counter);
+  puthex64(latency);
+  putchar('\n');
+  
+
+  puts("Compute Times:");
+  putchar('\n');
+  puthex64(compute_times);
+  putchar('\n');
+  
+  
+  
+  vecAddTest(va);
+  transposeTest(tp);
+  sparseMatVecMulTest(smvm,data,indices);
+  scanTest(sn);
+  reduceTest(rd);
+  matVecMulTest(mvm);
+  matMulTest(mm, matCheck);
+  histogramTest(hg);
+  bitonicSortLocalTest(bsl);
+
   return 0;
 }
