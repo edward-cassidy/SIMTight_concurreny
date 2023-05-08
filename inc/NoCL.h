@@ -203,7 +203,12 @@ struct Kernel {
   //Address of entry point for SIMT core
   uint32_t entryAddr;
 
+
+  //To identify kernel for evaluation purposes
   unsigned kernelID;
+
+  //static priority level 0,1 or 2
+  unsigned priority;
 
 };
 
@@ -266,25 +271,42 @@ template <typename K> __attribute__ ((noinline)) void _noclSIMTMain_() {
   k.blockIdx.x += blockXOffset;
   k.blockIdx.y += blockYOffset;
 
-  // Invoke kernel
-  pebblesSIMTConverge();
-  if (k.blockIdx.y < k.gridDim.y) {
-    if (k.blockIdx.x < k.gridDim.x) {
-      uint32_t localBase = LOCAL_MEM_BASE +
-                 k.map.localBytesPerBlock * blockIdxWithinSM;
-      #if EnableCHERI
-        // TODO: constrain bounds
-        void* almighty = cheri_ddc_get();
-        k.shared.top = (char*) cheri_address_set(almighty, localBase);
-      #else
-        k.shared.top = (char*) localBase;
-      #endif
-      k.kernel();
-      pebblesSIMTConverge();
-      pebblesSIMTLocalBarrier();
-    }
+  // Invoke kernel with prioritisation
+  int priority_left = k.priority;
+  bool kernel_finished = false;
+
+  while(priority_left>0 && !kernel_finished){
+
+    
     pebblesSIMTConverge();
+    if (k.blockIdx.y < k.gridDim.y) {
+      if (k.blockIdx.x < k.gridDim.x) {
+        uint32_t localBase = LOCAL_MEM_BASE +
+                  k.map.localBytesPerBlock * blockIdxWithinSM;
+        #if EnableCHERI
+          // TODO: constrain bounds
+          void* almighty = cheri_ddc_get();
+          k.shared.top = (char*) cheri_address_set(almighty, localBase);
+        #else
+          k.shared.top = (char*) localBase;
+        #endif
+        k.kernel();
+        priority_left = priority_left -1;
+        pebblesSIMTConverge();
+        pebblesSIMTLocalBarrier();
+        k.blockIdx.x += k.map.numXBlocks;
+      }else{
+        pebblesSIMTConverge();
+        k.blockIdx.x = blockXOffset;
+        k.blockIdx.y += k.map.numYBlocks;
+      }
+    }else{
+      kernel_finished = true;
+    }
+
   }
+
+  
 
   // Issue a fence to ensure all data has reached DRAM
   pebblesFence();
@@ -415,89 +437,7 @@ template <typename K> __attribute__ ((noinline))
     return pebblesSIMTGet();
   }
 
-int puthex64(uint64_t x)
-{
-  int count = 0;
-
-  for (count = 0; count < 16; count++) {
-    unsigned nibble = x >> 60;
-    putchar(nibble > 9 ? ('a'-10)+nibble : '0'+nibble);
-    x = x << 4;
-  }
-
-  return 8;
-}
-
-struct Output
-{
-  uint64_t intitial_time;
-  uint64_t final_time;
-};
-
-//Round Robin Scheduler
-__attribute__ ((noinline)) Output noclScheduler(Kernel **arr, int size, int ID){
-    
-  FixedQueue queue(arr , size);
-
-  //Setting the initial blockIds to 0
-  for (int i = 0; i < size; i++)
-  {
-      arr[i]->blockIdx.x = 0;
-      arr[i]->blockIdx.y = 0;
-  }
-
-  Output output;
-
-  bool first_round = true;
-  bool last_round = true;
-  bool kernel_finished = false;
-  while (true)
-  {
-
-      kernel_finished = false;
-      Kernel *k = queue.pop();
-
-      if(first_round){
-        if(k->kernelID == ID){
-          output.intitial_time = pebblesCycleCount();
-          first_round = false;
-        }
-      }
-      if(k->blockIdx.y < k->gridDim.y){
-          if(k->blockIdx.x < k->gridDim.x){
-              noclRunKernel(k);
-              k->blockIdx.x += k->map.numXBlocks;
-              if(!(k->blockIdx.x < k->gridDim.x)){
-                k->blockIdx.x = 0;
-                k->blockIdx.y += k->map.numYBlocks;
-                if(!(k->blockIdx.y < k->gridDim.y)){
-                  kernel_finished = true;
-                }
-              }
-          }
-      }
-      
-    
-      if(kernel_finished){
-        if(last_round){
-            if(k->kernelID == ID){
-              output.final_time = pebblesCycleCount();
-              last_round = false;
-            }
-          } 
-      }
-          
-
-      if(!kernel_finished){
-          queue.enqueue(k);
-      }else if(queue.head == queue.tail){
-          break;  
-      }
-  }
-  return output;
-}
-
-// Ask SIMT core for given performance stat
+  // Ask SIMT core for given performance stat
 inline void printStat(const char* str, uint32_t statId)
 {
   while (!pebblesSIMTCanPut()) {}
@@ -554,6 +494,129 @@ template <typename K> __attribute__ ((noinline))
 
     return ret;
   }
+
+
+// Trigger SIMT kernel execution from CPU, and dump performance stats
+__attribute__ ((noinline))
+  int noclRunKernelAndPrintCycles(Kernel* k) {
+    unsigned ret = noclRunKernel(k);
+
+    // Check return code
+    if (ret == 1) puts("Kernel failed\n");
+    if (ret == 2) puts("Kernel failed due to exception\n");
+
+    // Get number of cycles taken
+    printStat("", STAT_SIMT_CYCLES);
+
+    return ret;
+  }
+
+// Trigger SIMT kernel execution from CPU, and dump performance stats
+__attribute__ ((noinline))
+  int noclRunKernelAndPrintInstructions(Kernel* k) {
+    unsigned ret = noclRunKernel(k);
+
+    // Check return code
+    if (ret == 1) puts("Kernel failed\n");
+    if (ret == 2) puts("Kernel failed due to exception\n");
+
+    // Get number of instructions executed
+    printStat("", STAT_SIMT_INSTRS);
+
+    return ret;
+  }
+
+int puthex64(uint64_t x)
+{
+  int count = 0;
+
+  for (count = 0; count < 16; count++) {
+    unsigned nibble = x >> 60;
+    putchar(nibble > 9 ? ('a'-10)+nibble : '0'+nibble);
+    x = x << 4;
+  }
+
+  return 8;
+}
+
+struct Output
+{
+  uint64_t intitial_time;
+  uint64_t final_time;
+};
+
+//Static Priority Scheduler
+__attribute__ ((noinline)) Output noclScheduler(Kernel **arr, int size, int ID){
+    
+  FixedQueue queue(arr , size);
+
+  //Setting the initial blockIds to 0
+  for (int i = 0; i < size; i++)
+  {
+      arr[i]->blockIdx.x = 0;
+      arr[i]->blockIdx.y = 0;
+  }
+
+  //For evaluation purposes
+  Output output;
+  bool first_round = true;
+  bool last_round = true;
+
+  bool kernel_finished = false;
+  while (true)
+  {
+      //Pop next kernel from queue
+      kernel_finished = false;
+      Kernel *k = queue.pop();
+
+
+      if(!first_round){
+        noclRunKernel(k);
+      }
+
+      if(first_round){
+        noclRunKernelAndPrintInstructions(k);
+        if(k->kernelID == ID){
+          output.intitial_time = pebblesCycleCount();
+          first_round = false;
+        }
+      }
+      
+      int priority_left = k->priority;
+
+      
+
+      while(priority_left>0 && !kernel_finished){
+        priority_left = priority_left - 1;
+        k->blockIdx.x += k->map.numXBlocks;
+        if(!(k->blockIdx.x < k->gridDim.x)){
+          k->blockIdx.x = 0;
+          k->blockIdx.y += k->map.numYBlocks;
+          if(!(k->blockIdx.y < k->gridDim.y)){
+            kernel_finished = true;
+          }
+        }
+      }
+
+      if(kernel_finished){
+        if(last_round){
+            if(k->kernelID == ID){
+              output.final_time = pebblesCycleCount();
+              last_round = false;
+            }
+          } 
+      }
+
+      //Check if kernel has finished
+      if(!kernel_finished){
+          queue.enqueue(k);
+      }else if(queue.head == queue.tail){
+          break;  
+      }
+  }
+  return output;
+}
+
 
 // Explicit convergence
 INLINE void noclPush() { pebblesSIMTPush(); }

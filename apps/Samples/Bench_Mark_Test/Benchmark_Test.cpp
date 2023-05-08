@@ -2,7 +2,7 @@
 #include <Rand.h>
 #include <Pebbles/CSRs/CycleCount.h>
 
-
+int seed_type = 235;
 bool isSim = false;
 
 /////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -378,7 +378,7 @@ VecAdd vecAddCreate(int* a,int* b,int* result){
   int N = isSim ? 3000 : 1000000;
 
   // Initialise inputs
-  uint32_t seed = 1;
+  uint32_t seed = seed_type;
   for (int i = 0; i < N; i++) {
     a[i] = rand15(&seed);
     b[i] = rand15(&seed);
@@ -411,7 +411,7 @@ Transpose<SIMTLanes> transposeCreate(int* matInData, int* matOutData)
   Array2D<int> matOut(matOutData, width, height);
 
   // Initialise inputs
-  uint32_t seed = 1;
+  uint32_t seed = seed_type;
   for (int i = 0; i < height; i++)
     for (int j = 0; j < width; j++)
       matIn[i][j] = rand15(&seed);
@@ -449,7 +449,7 @@ SparseMatVecMul sparseMatVecMulCreate(int* dataT, int* indicesT,int* vecIn, int*
   int samplesPerRow = width / sparsity;
 
   // Initialise inputs
-  uint32_t seed = 1;
+  uint32_t seed = seed_type;
   for (int i = 0; i < width; i++)
     vecIn[i] = rand15(&seed) & 0xff;
   for (int r = 0; r < height; r++) {
@@ -505,7 +505,7 @@ Scan<SIMTWarps * SIMTLanes> scanCreate(int* in, int* out)
   int N = isSim ? 4096 : 1024000;
 
   // Initialise inputs
-  uint32_t seed = 1;
+  uint32_t seed = seed_type;
   for (int i = 0; i < N; i++) {
     in[i] = rand15(&seed);
   }
@@ -531,7 +531,7 @@ Reduce<SIMTWarps * SIMTLanes> reduceCreate(int* in, int* sum)
   int N = isSim ? 3000 : 1000000;
 
   // Initialise inputs
-  uint32_t seed = 1;
+  uint32_t seed = seed_type;
   int acc = 0;
   for (int i = 0; i < N; i++) {
     int r = rand15(&seed);
@@ -563,7 +563,7 @@ MatVecMul<SIMTLanes> matVecMulCreate(int* mat, int* vecIn, int* vecOut)
   int height = isSim ? 64 : 1024;
 
   // Initialise inputs
-  uint32_t seed = 1;
+  uint32_t seed = seed_type;
   for (int j = 0; j < width; j++)
     vecIn[j] = rand15(&seed) & 0xff;
   for (int i = 0; i < height; i++) {
@@ -597,7 +597,7 @@ MatMul<SIMTLanes> matMulCreate(int* matA, int* matB, int* matC, int* matCheck)
 
 
   // Initialise matrices
-  uint32_t seed = 1;
+  uint32_t seed = seed_type;
   for (int i = 0; i < size; i++)
     for (int j = 0; j < size; j++) {
       matA[i*size+j] = rand15(&seed) & 0xff;
@@ -631,7 +631,7 @@ Histogram histogramCreate(unsigned char* input, int* bins)
   int N = isSim ? 3000 : 1000000;
 
   // Initialise inputs
-  uint32_t seed = 1;
+  uint32_t seed = seed_type;
   for (int i = 0; i < N; i++)
     input[i] = rand15(&seed) & 0xff;
 
@@ -657,7 +657,7 @@ BitonicSortLocal bitonicSortLocalCreate(unsigned int* srcKeys,unsigned int* srcV
   int batch = isSim ? 4 : 64;
 
   // Initialise inputs
-  uint32_t seed = 1;
+  uint32_t seed = seed_type;
   for (int i = 0; i < N*batch; i++) {
     srcKeys[i] = rand15(&seed);
     srcVals[i] = rand15(&seed);
@@ -938,7 +938,7 @@ int main()
   noclMapping(&mvm);
   noclMapping(&hg);
 
-  Kernel * arr[9] = {&va, &tp, &mm, &bsl, &smvm, &sn, &rd, &mvm, &hg};
+  Kernel * arr[9] = {&va,&tp,&mm,&bsl,&smvm,&sn,&rd,&mvm,&hg};
   
   
   uint64_t latency;
@@ -947,13 +947,21 @@ int main()
   for (int i = 0; i < 9; i++)
   {
     arr[i]->kernelID = i;
+    arr[i]->priority = 1;
   }
 
+  arr[1]->priority = 8;
+  arr[2]->priority = 8;
+  arr[3]->priority = 4;
+  
+  
   before = pebblesCycleCount();
   Output output = noclScheduler(arr, 9, 8);
   latency = output.final_time - before;
-  compute_times= output.final_time - output.intitial_time;
-
+  
+  
+  /*
+  compute_times = output.final_time - output.intitial_time;
   puts("Latency:");
   putchar('\n');
   puthex64(latency);
@@ -964,18 +972,20 @@ int main()
   putchar('\n');
   puthex64(compute_times);
   putchar('\n');
+  */
   
   
   
   vecAddTest(va);
   transposeTest(tp);
+  matMulTest(mm, matCheck);
+  bitonicSortLocalTest(bsl);
   sparseMatVecMulTest(smvm,data,indices);
   scanTest(sn);
   reduceTest(rd);
   matVecMulTest(mvm);
-  matMulTest(mm, matCheck);
   histogramTest(hg);
-  bitonicSortLocalTest(bsl);
+  
 
   return 0;
 }
