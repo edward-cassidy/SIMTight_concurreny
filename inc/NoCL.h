@@ -545,47 +545,74 @@ struct Output
   uint64_t final_time;
 };
 
-//Static Priority Scheduler
+int calculate_priority(int* cycle_times, int size,int index,int* max){
+  if(*max==0){
+    for (int i = 0; i < size; i++)
+    {
+      *max = cycle_times[i]>*max ? cycle_times[i] : *max;
+    }
+  }
+  
+  return (*max)/cycle_times[index];
+}
+
+//Dynamic Priority Scheduler
 __attribute__ ((noinline)) Output noclScheduler(Kernel **arr, int size, int ID){
     
   FixedQueue queue(arr , size);
 
-  //Setting the initial blockIds to 0
+  //Setting the initial blockIds to 0 and priorities to 1
   for (int i = 0; i < size; i++)
   {
       arr[i]->blockIdx.x = 0;
       arr[i]->blockIdx.y = 0;
+      arr[i]->priority = 1;
+      arr[i]->kernelID = i;
   }
 
   //For evaluation purposes
   Output output;
-  bool first_round = true;
-  bool last_round = true;
 
+
+  int before;
+  int after;
+  bool first_round = true;
+  bool second_round = false;
   bool kernel_finished = false;
+
+  int cycle_times[size];
+  int counter = 0;
+  int max_counter = 0;
+  int max = 0;
+
   while (true)
   {
       //Pop next kernel from queue
       kernel_finished = false;
       Kernel *k = queue.pop();
 
+      if(first_round){
+        before = pebblesCycleCount();
+        noclRunKernel(k);
+        after = pebblesCycleCount();
+      }else if(second_round){
+        k->priority = calculate_priority(cycle_times,max_counter,counter,&max);
+        if(k->kernelID==ID){
+          puts("Priority: ");
+          puthex(k->priority);
+          putchar('\n');
+        }
+        counter++;
+        if(counter>=max_counter){
+          second_round = false;
+        }
+      }
 
       if(!first_round){
         noclRunKernel(k);
       }
 
-      if(first_round){
-        noclRunKernelAndPrintInstructions(k);
-        if(k->kernelID == ID){
-          output.intitial_time = pebblesCycleCount();
-          first_round = false;
-        }
-      }
-      
       int priority_left = k->priority;
-
-      
-
       while(priority_left>0 && !kernel_finished){
         priority_left = priority_left - 1;
         k->blockIdx.x += k->map.numXBlocks;
@@ -598,15 +625,20 @@ __attribute__ ((noinline)) Output noclScheduler(Kernel **arr, int size, int ID){
         }
       }
 
-      if(kernel_finished){
-        if(last_round){
-            if(k->kernelID == ID){
-              output.final_time = pebblesCycleCount();
-              last_round = false;
-            }
-          } 
+      if(first_round){
+        if(k->kernelID==(size-1)){
+          first_round=false;
+          second_round=true;
+          max_counter = counter;
+          counter = 0;
+        }
+        if(!kernel_finished){
+          cycle_times[counter] = after - before;
+          counter++;
+        } 
       }
 
+ 
       //Check if kernel has finished
       if(!kernel_finished){
           queue.enqueue(k);
