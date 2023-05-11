@@ -574,8 +574,8 @@ __attribute__ ((noinline)) Output noclScheduler(Kernel **arr, int size, int ID){
   Output output;
 
 
-  int before;
-  int after;
+  uint64_t before;
+  uint64_t after;
   bool first_round = true;
   bool second_round = false;
   bool kernel_finished = false;
@@ -584,6 +584,7 @@ __attribute__ ((noinline)) Output noclScheduler(Kernel **arr, int size, int ID){
   int counter = 0;
   int max_counter = 0;
   int max = 0;
+  int iterations = 0;
 
   while (true)
   {
@@ -595,21 +596,33 @@ __attribute__ ((noinline)) Output noclScheduler(Kernel **arr, int size, int ID){
         before = pebblesCycleCount();
         noclRunKernel(k);
         after = pebblesCycleCount();
+        if(k->kernelID == ID){
+          output.intitial_time = before;
+        }
       }else if(second_round){
-        k->priority = calculate_priority(cycle_times,max_counter,counter,&max);
+        k->priority = calculate_priority(cycle_times,max_counter,counter,&max); 
+        counter++;
         if(k->kernelID==ID){
           puts("Priority: ");
-          puthex(k->priority);
+          puthex64(k->priority);
           putchar('\n');
         }
-        counter++;
         if(counter>=max_counter){
           second_round = false;
         }
+        
       }
 
       if(!first_round){
-        noclRunKernel(k);
+        if(k->kernelID==ID){
+          noclRunKernelAndPrintInstructions(k);
+
+        }else{
+          noclRunKernel(k);
+        }
+          
+        
+       
       }
 
       int priority_left = k->priority;
@@ -626,16 +639,27 @@ __attribute__ ((noinline)) Output noclScheduler(Kernel **arr, int size, int ID){
       }
 
       if(first_round){
-        if(k->kernelID==(size-1)){
-          first_round=false;
-          second_round=true;
-          max_counter = counter;
-          counter = 0;
-        }
+        iterations++;
         if(!kernel_finished){
           cycle_times[counter] = after - before;
           counter++;
         } 
+
+        if(iterations>=(size)){
+          first_round=false;
+          second_round=true;
+          
+          max_counter = counter;
+          counter = 0;
+        }
+        
+      }
+
+
+      if(kernel_finished){
+        if(k->kernelID == ID){
+          output.final_time = pebblesCycleCount();
+        }
       }
 
  

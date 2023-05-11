@@ -2,7 +2,7 @@
 #include <Rand.h>
 #include <Pebbles/CSRs/CycleCount.h>
 
-int seed_type = 938;
+int seed_type = 2384;
 bool isSim = false;
 
 /////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -938,7 +938,7 @@ int main()
   noclMapping(&mvm);
   noclMapping(&hg);
 
-  Kernel * arr[9] = {&va,&tp,&mm,&bsl,&smvm,&sn,&rd,&mvm,&hg};
+  Kernel * arr[9] = {&va,&tp,&mm,&bsl,&smvm,&rd,&mvm,&sn,&hg};
   
   
   uint64_t latency;
@@ -948,8 +948,9 @@ int main()
   
   before = pebblesCycleCount();
   Output output = noclScheduler(arr, 9, 4);
- 
- /*
+  //after = pebblesCycleCount();
+
+  /*
   latency = output.final_time - before;
   compute_times = output.final_time - output.intitial_time;
   puts("Latency:");
@@ -957,13 +958,14 @@ int main()
   puthex64(latency);
   putchar('\n');
   
+  
 
   puts("Compute Times:");
   putchar('\n');
   puthex64(compute_times);
   putchar('\n');
-*/
-  
+
+  */
   
   
   
